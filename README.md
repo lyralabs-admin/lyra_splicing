@@ -5,7 +5,7 @@ This project contains code for training and evaluating the Lyra splice site clas
 ## Setup
 
 1.  **Create and set up the virtual environment**:
-    Run the provided setup script. This will create a virtual environment named `lyra_env` and install all the required dependencies.
+    Run the provided setup script. This will create a virtual environment named `lyra_env` and install all the required dependencies. The code currently requires FlashFFTCConv, which needs to be run on H100/A100. 
     ```bash
     bash setup_venv.sh
     ```
