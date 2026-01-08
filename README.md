@@ -18,7 +18,7 @@ This project contains code for training and evaluating the Lyra splice site clas
 
 ## Dataset
 
-The training and test data was generated using the `create-data` command from the OpenSpliceAI repository [[https://github.com/Kuanhao-Chao/OpenSpliceAI](https://github.com/Kuanhao-Chao/OpenSpliceAI)].
+The training and test data was generated using the `create-data` command from the OpenSpliceAI repository [[https://github.com/Kuanhao-Chao/OpenSpliceAI](https://github.com/Kuanhao-Chao/OpenSpliceAI)]. Processed data can be downloaded from hugging face at nmjaved/openspliceai_data_human_10k and placed in the folder openspliceai_data_human_10k
 
 The following command was used to create the dataset from the GRCh38 genome assembly and MANE v1.3 annotations, defining a 10,000 bp flank around each core region with default settings for paralogue removal and data split definition:
 
@@ -29,9 +29,6 @@ openspliceai create-data \
    --output-dir train_test_dataset_MANE/ \
    --flanking_size 10000
 ```
-
-These can be downloaded from hugging face at nmjaved/openspliceai_data_human_10k and placed in the folder openspliceai_data_human_10k
- - 
 
 ## Best Model & Performance
 
