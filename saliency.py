@@ -5,6 +5,9 @@ import argparse, importlib.util, os
 import numpy as np
 import torch
 import pysam
+import pandas as pd
+import matplotlib.pyplot as plt
+import logomaker
 
 DNA = np.array(["A","C","G","T"])
 BASE_TO_IDX = {"A":0,"C":1,"G":2,"T":3}
@@ -34,6 +37,12 @@ def load_module(py_path: str):
     spec.loader.exec_module(m)
     return m
 
+def get_model_defaults() -> dict:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    model_py = os.path.join(script_dir, "train_lyra_splice_classifier.py")
+    m = load_module(model_py)
+    return m.MODEL_DEFAULTS
+
 def load_lyra_model(checkpoint_pt: str, device, model_kwargs: dict):
     # fixed model path in same folder
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -53,6 +62,35 @@ def parse_positions(s: str) -> list:
         a = int(parts[0]); b = int(parts[1])
         return list(range(a, b))
     return [int(tok) for tok in s.replace(",", " ").split() if tok != ""]
+
+def parse_range(s: str, max_len: int) -> tuple[int, int]:
+    parts = s.split(":")
+    a = int(parts[0]); b = int(parts[1])
+    a = max(0, a); b = min(max_len, b)
+    return a, b
+
+def plot_logo_range(mat: np.ndarray, start: int, end: int, out_png: str | None):
+    sub = mat[start:end]
+    df = pd.DataFrame(sub, columns=["A", "C", "G", "T"])
+    ax = logomaker.Logo(df).ax
+    ax.set_ylabel("saliency")
+    ax.set_xlabel("pos")
+    ax.set_title(f"{start}:{end}")
+    if out_png:
+        plt.savefig(out_png, dpi=200, bbox_inches="tight")
+    else:
+        plt.show()
+
+def ism_logo_matrix(seq: str, deltas: np.ndarray) -> np.ndarray:
+    neg = -deltas  # higher = more important
+    out = np.zeros_like(neg)
+    s = seq.upper()
+    for i, ch in enumerate(s):
+        ref_idx = BASE_TO_IDX.get(ch, None)
+        if ref_idx is None:
+            continue
+        out[i, ref_idx] = float(neg[i].mean())  # avg -delta over all bases
+    return out
 
 def _select_scalar(logits: torch.Tensor, target_positions, target_class: int, reduce: str = "sum"):
     # logits: [1,L,3]
@@ -119,6 +157,7 @@ def ism_matrix(model, seq: str, device, region: tuple[int,int], target_positions
 
 def main():
     p = argparse.ArgumentParser(description="lyra saliency: input*grad or ism (fixed model from train_lyra_splice_classifier.py)")
+    model_defaults = get_model_defaults()
     p.add_argument("--method", choices=["ig", "ism"], required=True)
     # sequence sources
     p.add_argument("--seq", type=str, default="", help="input dna sequence (acgt); if empty, use --fasta/--chrom/--start/--end")
@@ -129,10 +168,10 @@ def main():
     p.add_argument("--strand", type=str, default="+", choices=["+","-"])
     p.add_argument("--checkpoint", type=str, required=True, help=".pt checkpoint path")
     # model kwargs (match your trained config)
-    p.add_argument("--d_model", type=int, default=48)
-    p.add_argument("--d_state", type=int, default=48)
-    p.add_argument("--dropout", type=float, default=0.15)
-    p.add_argument("--num_blocks", type=int, default=22)
+    p.add_argument("--d_model", type=int, default=model_defaults["d_model"])
+    p.add_argument("--d_state", type=int, default=model_defaults["d_state"])
+    p.add_argument("--dropout", type=float, default=model_defaults["dropout"])
+    p.add_argument("--num_blocks", type=int, default=model_defaults["num_blocks"])
     p.add_argument("--transposed", action="store_true", default=False)
     # target specification
     p.add_argument("--region_start", type=int, default=None, help="start (inclusive) of output slice")
@@ -143,6 +182,10 @@ def main():
     p.add_argument("--batch_size", type=int, default=256)
     # output
     p.add_argument("--out_npy", type=str, required=True, help="where to save the matrix (.npy)")
+    p.add_argument("--plot_logo", action="store_true", default=False)
+    p.add_argument("--plot_range", type=str, default="", help="start:end in output window coords")
+    p.add_argument("--plot_png", type=str, default="")
+    p.add_argument("--ism_logo_ref_only", action="store_true", default=False)
     args = p.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -175,6 +218,17 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out_npy)), exist_ok=True)
     np.save(args.out_npy, mat)
     print(f"saved {args.method} matrix to {args.out_npy} with shape {mat.shape}  # (L_window, 4) A,C,G,T")
+    if args.plot_logo:
+        pr = args.plot_range if args.plot_range else f"0:{mat.shape[0]}"
+        ps, pe = parse_range(pr, mat.shape[0])
+        out_png = args.plot_png if args.plot_png else None
+        if args.method == "ism" and args.ism_logo_ref_only:
+            plot_mat = ism_logo_matrix(seq, mat)
+        elif args.method == "ism":
+            plot_mat = -mat
+        else:
+            plot_mat = mat
+        plot_logo_range(plot_mat, ps, pe, out_png)
 
 if __name__ == "__main__":
     main()
